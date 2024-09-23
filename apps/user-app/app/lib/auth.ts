@@ -1,66 +1,87 @@
 import db from "@repo/db/client";
-import CredentialsProvider from "next-auth/providers/credentials"
+import CredentialsProvider from "next-auth/providers/credentials";
+import { AuthOptions, Session, User } from "next-auth";
 import bcrypt from "bcrypt";
+import { z } from "zod";
 
-export const authOptions = {
+const CredentialsSchema = z.object({
+    phone: z.string().min(10, "Phone number must be at least 10 digits").max(15, "Phone number too long"),
+    password: z.string().min(6, "Password must be at least 6 characters")
+});
+
+export const authOptions: AuthOptions = {
     providers: [
-      CredentialsProvider({
-          name: 'Credentials',
-          credentials: {
-            phone: { label: "Phone number", type: "text", placeholder: "1231231231", required: true },
-            password: { label: "Password", type: "password", required: true }
-          },
-          // TODO: User credentials type from next-aut
-          async authorize(credentials: any) {
-            // Do zod validation, OTP validation here
-            const hashedPassword = await bcrypt.hash(credentials.password, 10);
-            const existingUser = await db.user.findFirst({
-                where: {
-                    number: credentials.phone
-                }
-            });
+        CredentialsProvider({
+            name: 'Credentials',
+            credentials: {
+                phone: { label: "Phone number", type: "text", placeholder: "1231231231", required: true },
+                password: { label: "Password", type: "password", required: true }
+            },
+            async authorize(credentials) {
+                if (!credentials) return null;
 
-            if (existingUser) {
-                const passwordValidation = await bcrypt.compare(credentials.password, existingUser.password);
-                if (passwordValidation) {
-                    return {
-                        id: existingUser.id.toString(),
-                        name: existingUser.name,
-                        email: existingUser.number
-                    }
-                }
-                return null;
-            }
+                const parsedCredentials = CredentialsSchema.safeParse(credentials);
 
-            try {
-                const user = await db.user.create({
-                    data: {
-                        number: credentials.phone,
-                        password: hashedPassword
+                if (!parsedCredentials.success) {
+                    throw new Error("Invalid credentials format");
+                }
+
+                const { phone, password } = parsedCredentials.data;
+
+                const existingUser = await db.user.findFirst({
+                    where: {
+                        number: phone
                     }
                 });
-            
-                return {
-                    id: user.id.toString(),
-                    name: user.name,
-                    email: user.number
-                }
-            } catch(e) {
-                console.error(e);
-            }
 
-            return null
-          },
-        })
+                if (existingUser) {
+                    const passwordValidation = await bcrypt.compare(password, existingUser.password);
+                    if (passwordValidation) {
+                        return {
+                            id: existingUser.id.toString(),
+                            name: existingUser.name,
+                            email: existingUser.number 
+                        };
+                    }
+                    return null;
+                }
+
+               
+                const hashedPassword = await bcrypt.hash(password, 10);
+
+                try {
+                    const newUser = await db.user.create({
+                        data: {
+                            number: phone,
+                            password: hashedPassword
+                        }
+                    });
+
+                    return {
+                        id: newUser.id.toString(),
+                        name: newUser.name,
+                        email: newUser.number
+                    };
+                } catch (e) {
+                    console.error(e);
+                    return null;
+                }
+            },
+        }),
     ],
     secret: process.env.JWT_SECRET || "secret",
     callbacks: {
-        // TODO: can u fix the type here? Using any is bad
-        async session({ token, session }: any) {
-            session.user.id = token.sub
-
-            return session
+        async session({ token, session }: { token: any; session: Session }) {
+            if (session?.user) {
+                session.user.id = token.sub ;
+            }
+            return session;
+        },
+        async jwt({ token, user }: { token: any; user?: User }) {
+            if (user) {
+                token.sub = user.id;
+            }
+            return token;
         }
     }
-  }
-  
+};
