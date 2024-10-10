@@ -1,9 +1,9 @@
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "./lib/auth";
-import Dashboard from "../components/home"; 
+import Dashboard from "../components/home";
 
 export default async function Page() {
   const session = await getServerSession(authOptions);
 
-  return <Dashboard user={session?.user} />;
+  return <Dashboard user={session?.user ?? null} />;
 }
