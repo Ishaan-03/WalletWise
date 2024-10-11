@@ -12,7 +12,7 @@ export async function onrampTnxn(amount: number, provider: string) {
     }
 
     const userId = Number(session.user.id);
-    const token = Math.random().toString(); 
+    const token = Math.random().toString(); // in real world the token will come from bank api
 
     
 
